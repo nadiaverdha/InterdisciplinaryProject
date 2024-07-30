@@ -24,8 +24,8 @@ def merge_files(df, type='VV'):
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     grouped = df[df['filepath'].str.endswith('.tif')]
-    grouped['date'] = grouped['time'].dt.date
-
+    # grouped['date'] = grouped['time'].dt.date
+    grouped.loc[:, 'date'] = grouped['time'].dt.date
     grouped_type = grouped[grouped['filepath'].str.contains(type)]
     grouped_type = grouped_type.groupby('date').agg({'filepath': list})
 
