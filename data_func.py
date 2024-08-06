@@ -17,7 +17,7 @@ from rasterio.plot import show
 import tifftools
 
 
-# to merge the files in the same tile
+# to merge the files
 def merge_files(df, type='VV'):
     output_directory = './merged_tiffs'
 
@@ -33,3 +33,30 @@ def merge_files(df, type='VV'):
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]} {row.filepath[2]} {row.filepath[3]}"
         os.system(command)
 
+
+
+# to merge the files and split into train, validation and test
+def merge_files_and_split(df, type='VV'):
+    grouped = df[df['filepath'].str.endswith('.tif')]
+    grouped.loc[:, 'date'] = grouped['time'].dt.date
+    grouped_type = grouped[grouped['filepath'].str.contains('VH')]
+    grouped_type = grouped_type.groupby('date').agg({'filepath': list})
+    for _, row in grouped_type.iterrows():
+        if (_.month == 4) | (_.month == 7):
+            directory = 'test'
+            os.makedirs(directory, exist_ok=True)
+            output_path = directory + '/' + type + '_' + str(row.name) + '_merged.tiff'
+            command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]} {row.filepath[2]} {row.filepath[3]}"
+            os.system(command)
+        elif (_.month == 5) | (_.month == 8):
+            directory = 'val'
+            os.makedirs(directory, exist_ok=True)
+            output_path = directory + '/' + type + '_' + str(row.name) + '_merged.tiff'
+            command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]} {row.filepath[2]} {row.filepath[3]}"
+            os.system(command)
+        else:
+            directory = 'train'
+            os.makedirs(directory, exist_ok=True)
+            output_path = directory + '/' + type + '_' + str(row.name) + '_merged.tiff'
+            command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]} {row.filepath[2]} {row.filepath[3]}"
+            os.system(command)
