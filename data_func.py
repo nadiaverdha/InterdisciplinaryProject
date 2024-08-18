@@ -58,6 +58,9 @@ def merge(directory, type, row, notmask):
     else:
         directory = directory + "_mask"
         os.makedirs( directory, exist_ok=True)
-        output_path = directory + '/' + "mask" + '_' + str(row.name) + '_merged.tiff'
+        output_path = directory + '/' + "VH_mask" + '_' + str(row.name) + '_merged.tiff'
+        command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
+        os.system(command)
+        output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tiff'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
