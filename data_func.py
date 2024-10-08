@@ -15,6 +15,13 @@ import numpy as np
 from rasterio.merge import merge
 from rasterio.plot import show
 import tifftools
+from torch.utils.data import TensorDataset, DataLoader, Dataset
+import tensorflow as tf
+import torch
+import copy
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import matplotlib.pyplot as plt
 
 
 # to merge the files
@@ -64,3 +71,55 @@ def merge(directory, type, row, notmask):
         output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tiff'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
+
+def make_list(dir, mask_dir, name):
+    img_list = sorted(glob.glob(dir))
+    mask_list = sorted(glob.glob(mask_dir))
+    file_num = len(img_list)
+    output_filename = "./" + name + "_images.txt"
+    with open(output_filename, 'w') as f:
+        for s in range(file_num):
+            f.write(img_list[s] + '\t' + mask_list[s] + '\n')
+
+
+class ImageDataset(Dataset):
+    def __init__(self, images_folder, mask_folder, transform=None):
+        self.images = os.listdir(images_folder)
+        self.images_folder = images_folder
+        self.masks = os.listdir(mask_folder)
+        self.transform = transform
+        self.mask_folder = mask_folder
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        image_path = os.path.join(self.images_folder, self.images[idx])
+        mask_path = os.path.join(self.mask_folder, self.masks[idx])
+        image = rasterio.open(image_path).read(1)
+        mask = rasterio.open(mask_path).read(1)
+        image = np.array(image, dtype=np.float32)
+        mask = np.array(mask, dtype=np.float32)
+
+        if self.transform:
+            augmented = self.transform(image=image, mask=mask)
+            image = augmented['image']
+            mask = augmented['mask']
+
+        return torch.from_numpy(image), torch.from_numpy(mask)
+
+def visualize_augmentations(dataset, idx=0, samples=3):
+    dataset = copy.deepcopy(dataset)
+    dataset.transform = A.Compose([t for t in dataset.transform if not isinstance(t, (A.Normalize, ToTensorV2))])
+    figure, ax = plt.subplots(nrows=samples, ncols=2, figsize=(5, 6))
+    for i in range(samples):
+        # print(i)
+        image, mask = dataset[idx]
+        ax[i, 0].imshow(image)
+        ax[i, 1].imshow(mask, interpolation="nearest")
+        ax[i, 0].set_title("Augmented image")
+        ax[i, 1].set_title("Augmented mask")
+        ax[i, 0].set_axis_off()
+        ax[i, 1].set_axis_off()
+    plt.tight_layout()
+    plt.show()
