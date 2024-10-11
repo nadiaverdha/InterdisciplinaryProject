@@ -1,6 +1,7 @@
 import os
 import glob
 from osgeo import gdal
+import osgeo.gdal
 import pprint
 import numpy as np
 from yeoda.datacube import DataCubeReader
@@ -106,7 +107,7 @@ class ImageDataset(Dataset):
             image = augmented['image']
             mask = augmented['mask']
 
-        return torch.from_numpy(image), torch.from_numpy(mask)
+        return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0)
 
 def visualize_augmentations(dataset, idx=0, samples=3):
     dataset = copy.deepcopy(dataset)
@@ -115,11 +116,13 @@ def visualize_augmentations(dataset, idx=0, samples=3):
     for i in range(samples):
         # print(i)
         image, mask = dataset[idx]
-        ax[i, 0].imshow(image)
-        ax[i, 1].imshow(mask, interpolation="nearest")
+        # print(image.squeeze(0).shape)
+        ax[i, 0].imshow(image.squeeze(0))
+        ax[i, 1].imshow(mask.squeeze(0), interpolation="nearest")
         ax[i, 0].set_title("Augmented image")
         ax[i, 1].set_title("Augmented mask")
         ax[i, 0].set_axis_off()
         ax[i, 1].set_axis_off()
     plt.tight_layout()
     plt.show()
+
