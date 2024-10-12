@@ -111,12 +111,14 @@ def make_list(dir, mask_dir, name):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, images_folder, mask_folder, transform=None):
+    def __init__(self, images_folder, mask_folder, lacken_mask_folder, transform=None):
         self.images = os.listdir(images_folder)
         self.images_folder = images_folder
         self.masks = os.listdir(mask_folder)
         self.transform = transform
         self.mask_folder = mask_folder
+        self.lacken_mask_folder = lacken_mask_folder
+        self.lacken_masks = os.listdir(self.lacken_mask_folder)
 
     def __len__(self):
         return len(self.images)
@@ -124,32 +126,40 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx):
         image_path = os.path.join(self.images_folder, self.images[idx])
         mask_path = os.path.join(self.mask_folder, self.masks[idx])
+        lacken_mask_path = os.path.join(self.lacken_mask_folder, self.lacken_masks[idx])
+
         image = rasterio.open(image_path).read(1)
         mask = rasterio.open(mask_path).read(1)
+        lacken_mask = rasterio.open(lacken_mask_path).read(1)
         image = np.array(image, dtype=np.float32)
         mask = np.array(mask, dtype=np.float32)
+        lacken_mask = np.array(lacken_mask, dtype=np.float32)
 
         if self.transform:
-            augmented = self.transform(image=image, mask=mask)
+            augmented = self.transform(image=image, masks  = [mask,lacken_mask])
             image = augmented['image']
-            mask = augmented['mask']
+            mask= augmented['masks'][0]
+            lacken_mask = augmented['masks'][1]
 
-        return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0)
+        return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(lacken_mask).unsqueeze(0)
 
 def visualize_augmentations(dataset, idx=0, samples=3):
     dataset = copy.deepcopy(dataset)
     dataset.transform = A.Compose([t for t in dataset.transform if not isinstance(t, (A.Normalize, ToTensorV2))])
-    figure, ax = plt.subplots(nrows=samples, ncols=2, figsize=(5, 6))
+    figure, ax = plt.subplots(nrows=samples, ncols=3, figsize=(10, 13))
     for i in range(samples):
         # print(i)
-        image, mask = dataset[idx]
+        image, mask, lacken_mask = dataset[idx]
         # print(image.squeeze(0).shape)
         ax[i, 0].imshow(image.squeeze(0))
         ax[i, 1].imshow(mask.squeeze(0), interpolation="nearest")
+        ax[i, 2].imshow(lacken_mask.squeeze(0), interpolation="nearest")
         ax[i, 0].set_title("Augmented image")
-        ax[i, 1].set_title("Augmented mask")
+        ax[i, 1].set_title("mask")
+        ax[i, 2].set_title("Lacken mask")
         ax[i, 0].set_axis_off()
         ax[i, 1].set_axis_off()
+        ax[i, 2].set_axis_off()
     plt.tight_layout()
     plt.show()
 
