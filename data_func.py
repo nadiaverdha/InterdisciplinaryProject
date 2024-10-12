@@ -10,6 +10,7 @@ import pandas as pd
 import time
 import rasterio
 import glob
+import cv2
 from rasterio.plot import show
 import rasterio
 import numpy as np
@@ -72,6 +73,32 @@ def merge(directory, type, row, notmask):
         output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tiff'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
+
+
+def create_lacken_mask(input_dir, output_dir):
+    tif_files = os.listdir(input_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    for tif_file in tif_files:
+        with rasterio.open((input_dir + tif_file)) as src:
+            water_mask = src.read(1)
+        water_mask_uint8 = np.uint8(water_mask)
+        contours, _ = cv2.findContours(water_mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        lacken_mask = np.zeros_like(water_mask)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 1000000:
+                cv2.drawContours(lacken_mask, [contour], -1, 1, thickness=-1)
+        out_meta = src.meta.copy()
+        out_meta.update({"driver": "GTiff", "height": lacken_mask.shape[0], "width": lacken_mask.shape[1], "count": 1})
+
+        output_filename = os.path.splitext(os.path.basename(tif_file))[0] + "_lacken_mask.tif"
+        output_filepath = os.path.join(output_dir, output_filename)
+
+        with rasterio.open(output_filepath, "w", **out_meta) as dst:
+            dst.write(lacken_mask.astype(rasterio.uint8), 1)
+
 
 def make_list(dir, mask_dir, name):
     img_list = sorted(glob.glob(dir))
