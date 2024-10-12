@@ -49,9 +49,9 @@ def merge_files_and_split(df, type='VV', notmask=True):
         grouped = grouped[grouped['filepath'].str.contains(type)]
     grouped = grouped.groupby('date').agg({'filepath': list})
     for _, row in grouped.iterrows():
-        if (_.month == 4) | (_.month == 7):
+        if (_.month == 4) | (_.month == 9):
             merge('test', type, row, notmask)
-        elif (_.month == 5) | (_.month == 8):
+        elif (_.month == 5) | (_.month == 10):
             merge('val', type, row, notmask)
         else:
             merge('train', type, row, notmask)
