@@ -31,12 +31,24 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 
-def dice_coeff(input, target):
-    inter = 2 * (input * target).sum()
-    sets_sum = input.sum() + target.sum()
+# def dice_coeff(input, target):
+#     inter = 2 * (input * target).sum()
+#     sets_sum = input.sum() + target.sum()
+#     if sets_sum == 0:
+#         return 1
+#     dice = (inter + 1) / (sets_sum + 1)
+#     return dice.item()
+
+def dice_coeff(input, target, smooth=1):
+    # if input.dim() == 2:
+    sum_dim = (-1, -2)
+
+    inter = 2 * (input * target).sum(dim=sum_dim)
+    sets_sum = input.sum(dim=sum_dim) + target.sum(dim=sum_dim)
     sets_sum = torch.where(sets_sum == 0, inter, sets_sum)
+
     dice = (inter + 1) / (sets_sum + 1)
-    return dice.item()
+    return dice.mean()
 
 
 def dice_loss(input, target):
@@ -46,10 +58,10 @@ def dice_loss(input, target):
 
 def iou(logits, targets, smooth=1):
     intersection = (logits * targets).sum()
-    union = logits.sum() + targets.sum() - intersection + smooth
+    union = logits.sum() + targets.sum() - intersection
     if union == 0:
         return 1
-    iou = intersection / union
+    iou =( intersection +1) / (union +1)
     return iou.item()
 
 
@@ -87,7 +99,7 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
             logits = model(images)
             loss = criterion(logits, masks.float())
-            loss += dice_loss(logits, masks.float())
+            loss += dice_loss(F.sigmoid(logits), masks.float())
 
             optimizer.zero_grad()
             grad_scaler.scale(loss).backward()
@@ -95,14 +107,15 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             grad_scaler.step(optimizer)
             grad_scaler.update()
+            mask_pred = (F.sigmoid(logits) > 0.5).float()
 
             train_loss += loss.item()
-            train_dice += dice_coeff((logits > 0.5), masks)
-            train_l_dice += dice_coeff((logits > 0.5), lacken_masks)
-            train_iou += iou((logits > 0.5), masks)
-            train_l_iou += iou((logits > 0.5), lacken_masks)
-            train_acc += pixel_accuracy((logits > 0.5), masks)
-            train_l_acc += pixel_accuracy((logits > 0.5), lacken_masks)
+            train_dice += dice_coeff(mask_pred, masks)
+            train_l_dice += dice_coeff(mask_pred, lacken_masks)
+            train_iou += iou(mask_pred, masks)
+            train_l_iou += iou(mask_pred, lacken_masks)
+            train_acc += pixel_accuracy(mask_pred, masks)
+            train_l_acc += pixel_accuracy(mask_pred, lacken_masks)
 
         train_loss /= len(trainloader)
         train_dice /= len(trainloader)
@@ -135,15 +148,16 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
                 images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
                 logits = model(images)
                 loss = criterion(logits, masks.float())
-                loss += dice_loss(logits, masks.float())
 
+                mask_pred = (F.sigmoid(logits) > 0.5).float()
+                loss += dice_loss(F.sigmoid(logits), masks.float())
                 val_loss += loss.item()
-                val_dice += dice_coeff((logits > 0.5), masks)
-                val_l_dice += dice_coeff((logits > 0.5), lacken_masks)
-                val_iou += iou((logits > 0.5), masks)
-                val_l_iou += iou((logits > 0.5), lacken_masks)
-                val_acc += pixel_accuracy((logits > 0.5), masks)
-                val_l_acc += pixel_accuracy((logits > 0.5), lacken_masks)
+                val_dice += dice_coeff(mask_pred, masks)
+                val_l_dice += dice_coeff(mask_pred, lacken_masks)
+                val_iou += iou(mask_pred, masks)
+                val_l_iou += iou(mask_pred, lacken_masks)
+                val_acc += pixel_accuracy(mask_pred, masks)
+                val_l_acc += pixel_accuracy(mask_pred, lacken_masks)
         scheduler.step(val_dice)
         val_loss /= len(valloader)
         val_dice /= len(valloader)
@@ -182,12 +196,4 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
 
         if val_dice > best_dice:
             best_dice = val_dice
-            patience = patience
-        else:
-            patience -= 1
-
-        if patience <= 0:
-            print("Early Stopping")
-            break
-
-        torch.save(model.state_dict(), model_file)
+            torch.save(model.state_dict(), model_file)
