@@ -16,6 +16,7 @@ from torch.nn import BCEWithLogitsLoss
 from torchvision.transforms import ToTensor
 import rasterio
 from torch import nn
+from csv import DictWriter
 from torch import optim, nn
 from torch.utils.data import TensorDataset, DataLoader, Dataset
 import os
@@ -30,46 +31,30 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 
-class DiceBCELoss(nn.Module):
-    def __init__(self, smooth=1):
-        super(DiceBCELoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, logits, targets):
-        intersection = 2 * (logits * targets).sum() + self.smooth
-        union = (logits + targets).sum() + self.smooth
-        dice_loss = 1. - intersection / union
-
-        loss = nn.BCELoss()
-        bce_loss = loss(logits, targets)
-
-        return dice_loss + bce_loss
+def dice_coeff(input, target):
+    inter = 2 * (input * target).sum()
+    sets_sum = input.sum() + target.sum()
+    sets_sum = torch.where(sets_sum == 0, inter, sets_sum)
+    dice = (inter + 1) / (sets_sum + 1)
+    return dice.item()
 
 
-def dice_coeff(logits, targets):
-    logits = (logits > 0.5).float()
-    intersection = 2 * (logits * targets).sum()
-    union = (logits + targets).sum()
-    if union == 0:
-        return 1
-    dice_coeff = intersection / union
-    return dice_coeff.item()
+def dice_loss(input, target):
+    fn = dice_coeff
+    return 1 - fn(input, target)
 
 
 def iou(logits, targets, smooth=1):
-    logits = (logits > 0.5).float()
-    intersection = 2 * (logits * targets).sum()
-    union = (logits + targets).sum() - intersection
+    intersection = (logits * targets).sum()
+    union = logits.sum() + targets.sum() - intersection + smooth
     if union == 0:
         return 1
     iou = intersection / union
-
     return iou.item()
 
 
 def pixel_accuracy(logits, targets):
-    preds = (logits > 0.5).float()
-    preds_flat = preds.view(-1)
+    preds_flat = logits.view(-1)
     targets_flat = targets.view(-1)
 
     correct = torch.sum(preds_flat == targets_flat)
@@ -79,12 +64,16 @@ def pixel_accuracy(logits, targets):
     return accuracy.item()
 
 
-def train(model, trainloader, valloader, optimizer, loss, epochs=10):
+def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, grad_scaler, scheduler, dict_file,
+                   model_file, best_dice=0, patience=10):
     train_losses, val_losses = [], []
     train_dices, train_l_dices, val_dices, val_l_dices = [], [], [], []
     train_ious, train_l_ious, val_ious, val_l_ious = [], [], [], []
     train_accs, train_l_accs, val_accs, val_l_accs = [], [], [], []
     for epoch in tqdm(range(epochs)):
+        ###################
+        # train the model #
+        ###################
         model.train()
         train_loss = 0
         train_dice = 0
@@ -96,18 +85,25 @@ def train(model, trainloader, valloader, optimizer, loss, epochs=10):
 
         for i, (images, masks, lacken_masks) in enumerate(trainloader):
             images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
-            optimizer.zero_grad()
             logits = model(images)
-            l = loss(logits, masks)
-            l.backward()
-            optimizer.step()
-            train_loss += l.item()
-            train_dice += dice_coeff(logits, masks)
-            train_iou += iou(logits, masks)
-            train_acc += pixel_accuracy(logits, masks)
-            train_l_acc += pixel_accuracy(logits, lacken_masks)
-            train_l_dice += dice_coeff(logits, lacken_masks)
-            train_l_iou += iou(logits, lacken_masks)
+            loss = criterion(logits, masks.float())
+            loss += dice_loss(logits, masks.float())
+
+            optimizer.zero_grad()
+            grad_scaler.scale(loss).backward()
+            grad_scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
+
+            train_loss += loss.item()
+            train_dice += dice_coeff((logits > 0.5), masks)
+            train_l_dice += dice_coeff((logits > 0.5), lacken_masks)
+            train_iou += iou((logits > 0.5), masks)
+            train_l_iou += iou((logits > 0.5), lacken_masks)
+            train_acc += pixel_accuracy((logits > 0.5), masks)
+            train_l_acc += pixel_accuracy((logits > 0.5), lacken_masks)
+
         train_loss /= len(trainloader)
         train_dice /= len(trainloader)
         train_iou /= len(trainloader)
@@ -123,6 +119,9 @@ def train(model, trainloader, valloader, optimizer, loss, epochs=10):
         train_l_ious.append(train_l_iou)
         train_l_dices.append(train_l_dice)
 
+        ######################
+        # validate the model #
+        ######################
         model.eval()
         val_loss = 0
         val_dice = 0
@@ -135,14 +134,17 @@ def train(model, trainloader, valloader, optimizer, loss, epochs=10):
             for i, (images, masks, lacken_masks) in enumerate(valloader):
                 images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
                 logits = model(images)
-                l = loss(logits, masks)
-                val_loss += l.item()
-                val_dice += dice_coeff(logits, masks)
-                val_iou += iou(logits, masks)
-                val_acc += pixel_accuracy(logits, masks)
-                val_l_dice += dice_coeff(logits, lacken_masks)
-                val_l_iou += iou(logits, lacken_masks)
-                val_l_acc += pixel_accuracy(logits, lacken_masks)
+                loss = criterion(logits, masks.float())
+                loss += dice_loss(logits, masks.float())
+
+                val_loss += loss.item()
+                val_dice += dice_coeff((logits > 0.5), masks)
+                val_l_dice += dice_coeff((logits > 0.5), lacken_masks)
+                val_iou += iou((logits > 0.5), masks)
+                val_l_iou += iou((logits > 0.5), lacken_masks)
+                val_acc += pixel_accuracy((logits > 0.5), masks)
+                val_l_acc += pixel_accuracy((logits > 0.5), lacken_masks)
+        scheduler.step(val_dice)
         val_loss /= len(valloader)
         val_dice /= len(valloader)
         val_iou /= len(valloader)
@@ -157,7 +159,8 @@ def train(model, trainloader, valloader, optimizer, loss, epochs=10):
         val_l_accs.append(val_l_acc)
         val_l_dices.append(val_l_dice)
         val_l_ious.append(val_l_iou)
-        print(f"Epoch: {epoch + 1} ")
+
+        print(f" \n Epoch: {epoch + 1} ")
         print(
             f"TRAIN FUll: Train Loss: {train_loss:.4f} | Train DICE Coeff: {train_dice:.4f}  | Train IoU Coeff: {train_iou:.4f}|  | Train Accuracy: {train_acc * 100:.2f} ")
         print(
@@ -167,4 +170,24 @@ def train(model, trainloader, valloader, optimizer, loss, epochs=10):
         print(
             f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.4f} | Val IoU Coeff: {val_l_iou:.4f}| Val Accuracy: {val_l_acc * 100:.2f}| ")
 
-    return train_losses, train_dices, val_losses, val_dices, train_l_dices, train_l_ious, train_l_accs, val_l_dice, val_l_ious, val_l_accs
+        d = {'epoch': epoch, 'train loss': train_loss, 'valid loss': val_loss, 'train_dice': train_dice,
+             'train_l_dice': train_l_dice, 'val_dice': val_dice, 'val_l_dice': val_l_dice}
+
+        with open(dict_file, 'a') as f:
+            dictwriter_object = DictWriter(f,
+                                           fieldnames=['epoch', 'train loss', 'valid loss', 'train_dice',
+                                                       'train_l_dice', 'val_dice',
+                                                       'val_l_dice'])
+            dictwriter_object.writerow(d)
+
+        if val_dice > best_dice:
+            best_dice = val_dice
+            patience = patience
+        else:
+            patience -= 1
+
+        if patience <= 0:
+            print("Early Stopping")
+            break
+
+        torch.save(model.state_dict(), model_file)
