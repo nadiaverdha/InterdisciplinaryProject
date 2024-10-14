@@ -21,6 +21,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from torch.nn import Module, MaxPool2d
 from torchvision.transforms import CenterCrop
+from torchvision import models
 
 
 class DoubleConv(nn.Module):
@@ -32,7 +33,8 @@ class DoubleConv(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True) )
+            nn.ReLU(inplace=True))
+
     def forward(self, x):
         return self.conv(x)
 
@@ -42,7 +44,7 @@ class DownSample(nn.Module):
         super().__init__()
         self.down = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConv(in_channels, out_channels) )
+            DoubleConv(in_channels, out_channels))
 
     def forward(self, x):
         return self.down(x)
@@ -78,6 +80,7 @@ class OutConv(nn.Module):
         # return self.sigmoid(self.conv(x))
         return self.conv(x)
 
+
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes):
         super().__init__()
@@ -86,6 +89,7 @@ class UNet(nn.Module):
         self.down2 = DownSample(128, 256)
         self.down3 = DownSample(256, 512)
         self.down4 = DownSample(512, 1024)
+
         self.up1 = UpSample(1024, 512)
         self.up2 = UpSample(512, 256)
         self.up3 = UpSample(256, 128)
@@ -104,3 +108,98 @@ class UNet(nn.Module):
         x = self.up4(x, x1)
         logits = self.outc(x)
         return logits
+
+
+
+class DecoderBlockv2(nn.Module):
+    def __init__(self, in_channels, out_channels, upsample=1):
+        super().__init__()
+        if upsample:
+            self.upconv = nn.ConvTranspose2d(in_channels * 2, in_channels * 2, kernel_size=2, stride=2)
+        else:
+            self.upconv = nn.Identity()
+        self.layers = DoubleConv(in_channels * 2, out_channels)
+
+    def forward(self, x, skip_connection):
+
+        target_height = x.size(2)
+        target_width = x.size(3)
+        skip_interp = F.interpolate(
+            skip_connection, size=(target_height, target_width), mode='bilinear', align_corners=False)
+
+        concatenated = torch.cat([skip_interp, x], dim=1)
+
+        concatenated = self.upconv(concatenated)
+
+        output = self.layers(concatenated)
+        return output
+
+
+
+class UNetFT(nn.Module):
+    def __init__(self, n_classes, pretrained=True,
+                 in_channels =1, layer1_features=32, layer2_features=16,
+                 layer3_features=24, layer4_features=40, layer5_features=80):
+        super(UNetFT, self).__init__()
+        self.effnet = models.efficientnet_b0(pretrained=pretrained)
+
+        self.n_classes = n_classes
+
+        #         # Layer feature sizes
+        self.input_features = in_channels
+        self.layer1_features = layer1_features
+        self.layer2_features = layer2_features
+        self.layer3_features = layer3_features
+        self.layer4_features = layer4_features
+        self.layer5_features = layer5_features
+
+        #         Encoder layers
+        self.effnet.features[0][0] = nn.Conv2d(in_channels, layer1_features, kernel_size=3, stride=2, padding=1,
+                                               bias=False)
+        self.encoder1 = nn.Sequential(*list(self.effnet.features.children())[0])  # out 32,112*112
+        self.encoder2 = nn.Sequential(*list(self.effnet.features.children())[1])  # out 16,112*112
+        self.encoder3 = nn.Sequential(*list(self.effnet.features.children())[2])  # out 24,56*56
+        self.encoder4 = nn.Sequential(*list(self.effnet.features.children())[3])  # out 40,28*28
+        self.encoder5 = nn.Sequential(*list(self.effnet.features.children())[4])  # out 40,28*28
+
+        del self.effnet
+
+        for param in self.encoder1.parameters():
+            param.requires_grad = False
+        for param in self.encoder2.parameters():
+            param.requires_grad = False
+
+        # Bottleneck Layer
+        self.bottleneck = DoubleConv(self.layer5_features, self.layer5_features)
+
+        # Decoder layers
+        self.decoder1 = DecoderBlockv2(self.layer5_features, self.layer4_features)
+        self.decoder2 = DecoderBlockv2(self.layer4_features, self.layer3_features)
+        self.decoder3 = DecoderBlockv2(self.layer3_features, self.layer2_features)
+        self.decoder4 = DecoderBlockv2(self.layer2_features, self.layer1_features, upsample=0)
+        self.decoder5 = DecoderBlockv2(self.layer1_features, self.layer1_features)
+
+        # Final layer
+        self.final_conv = OutConv(self.layer1_features, self.n_classes)
+
+    def forward(self, x):
+        x1 = self.encoder1(x)
+        x2 = self.encoder2(x1)
+        x3 = self.encoder3(x2)
+        x4 = self.encoder4(x3)
+        x5 = self.encoder5(x4)
+        x = self.bottleneck(x5)
+        x = self.decoder1(x, x5)
+        x = self.decoder2(x, x4)
+        x = self.decoder3(x, x3)
+        x = self.decoder4(x, x2)
+        x = self.decoder5(x, x1)
+
+        logits = self.final_conv(x)
+
+        return logits
+
+
+
+
+
