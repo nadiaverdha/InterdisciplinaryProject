@@ -24,6 +24,8 @@ import copy
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
+import fiona
+from fiona.transform import transform_geom
 
 
 # to merge the files
@@ -100,6 +102,36 @@ def create_lacken_mask(input_dir, output_dir):
             dst.write(lacken_mask.astype(rasterio.uint8), 1)
 
 
+def mask_files(shapefile, input_dir, output_dir):
+    tif_files = os.listdir(input_dir)
+    for tiff in tif_files:
+        output_filepath = os.path.join(output_dir, tiff)
+        if tiff.endswith(('.tif', '.tiff')):
+            # print(output_filepath)
+            with rasterio.open(output_filepath) as src:
+                raster_crs = src.crs
+            with fiona.open('shape_file.shp', "r") as shapefile:
+                shapes = []
+                for feature in shapefile:
+                    geom = feature["geometry"]
+                    if shapefile.crs != raster_crs:
+                        geom = transform_geom(shapefile.crs, raster_crs, geom)
+                    shapes.append(geom)
+
+            with rasterio.open(output_filepath) as src:
+                out_image, out_transform = rasterio.mask.mask(src, shapes, crop=True)
+                out_meta = src.meta.copy()
+
+            # Update the metadata and save the result
+            out_meta.update({"driver": "GTiff",
+                             "height": out_image.shape[1],
+                             "width": out_image.shape[2],
+                             "transform": out_transform})
+
+            with rasterio.open(output_filepath, "w", **out_meta) as dest:
+                dest.write(out_image)
+
+
 def make_list(dir, mask_dir, name):
     img_list = sorted(glob.glob(dir))
     mask_list = sorted(glob.glob(mask_dir))
@@ -124,24 +156,25 @@ class ImageDataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
-        image_path = os.path.join(self.images_folder, self.images[idx])
-        mask_path = os.path.join(self.mask_folder, self.masks[idx])
-        lacken_mask_path = os.path.join(self.lacken_mask_folder, self.lacken_masks[idx])
+        if self.images[idx].endswith(('.tif', '.tiff')):
+            image_path = os.path.join(self.images_folder, self.images[idx])
+            mask_path = os.path.join(self.mask_folder, self.masks[idx])
+            lacken_mask_path = os.path.join(self.lacken_mask_folder, self.lacken_masks[idx])
 
-        image = rasterio.open(image_path).read(1)
-        mask = rasterio.open(mask_path).read(1)
-        lacken_mask = rasterio.open(lacken_mask_path).read(1)
-        image = np.array(image, dtype=np.float32)
-        mask = np.array(mask, dtype=np.float32)
-        lacken_mask = np.array(lacken_mask, dtype=np.float32)
+            image = rasterio.open(image_path).read(1)
+            mask = rasterio.open(mask_path).read(1)
+            lacken_mask = rasterio.open(lacken_mask_path).read(1)
+            image = np.array(image, dtype=np.float32)
+            mask = np.array(mask, dtype=np.float32)
+            lacken_mask = np.array(lacken_mask, dtype=np.float32)
 
-        if self.transform:
-            augmented = self.transform(image=image, masks  = [mask,lacken_mask])
-            image = augmented['image']
-            mask= augmented['masks'][0]
-            lacken_mask = augmented['masks'][1]
+            if self.transform:
+                augmented = self.transform(image=image, masks  = [mask,lacken_mask])
+                image = augmented['image']
+                mask= augmented['masks'][0]
+                lacken_mask = augmented['masks'][1]
 
-        return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(lacken_mask).unsqueeze(0)
+            return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(lacken_mask).unsqueeze(0)
 
 def visualize_augmentations(dataset, idx=0, samples=3):
     dataset = copy.deepcopy(dataset)
