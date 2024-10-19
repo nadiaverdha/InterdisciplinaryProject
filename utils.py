@@ -68,12 +68,38 @@ def iou(logits, targets, smooth=1):
 def pixel_accuracy(logits, targets):
     preds_flat = logits.view(-1)
     targets_flat = targets.view(-1)
-
     correct = torch.sum(preds_flat == targets_flat)
     total_pixels = targets_flat.numel()
     accuracy = correct.float() / total_pixels
 
     return accuracy.item()
+
+
+import torch
+
+
+def balanced_accuracy(logits, targets):
+    preds_flat = logits.view(-1)
+    targets_flat = targets.view(-1)
+
+    TP = torch.sum((preds_flat == 1) & (targets_flat == 1)).float()
+    TN = torch.sum((preds_flat == 0) & (targets_flat == 0)).float()
+    FP = torch.sum((preds_flat == 1) & (targets_flat == 0)).float()
+    FN = torch.sum((preds_flat == 0) & (targets_flat == 1)).float()
+
+    P = TP + FN
+    N = TN + FP
+
+    if P == 0 or N == 0:
+        return float('nan')
+
+    sensitivity = TP / P
+    specificity = TN / N
+
+    # Calculate balanced accuracy
+    balanced_acc = (sensitivity + specificity) / 2.0
+
+    return balanced_acc.item()
 
 
 def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, grad_scaler, scheduler, dict_file,
@@ -82,6 +108,7 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
     train_dices, train_l_dices, val_dices, val_l_dices = [], [], [], []
     train_ious, train_l_ious, val_ious, val_l_ious = [], [], [], []
     train_accs, train_l_accs, val_accs, val_l_accs = [], [], [], []
+    train_bal_accs, val_bal_accs, train_l_bal_accs, val_l_bal_accs = [], [], [], []
     for epoch in tqdm(range(epochs)):
         ###################
         # train the model #
@@ -94,6 +121,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         train_l_acc = 0
         train_l_dice = 0
         train_l_iou = 0
+        train_bal_acc= 0
+        train_l_bal_acc = 0
 
         for i, (images, masks, lacken_masks) in enumerate(trainloader):
             images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
@@ -102,11 +131,13 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             loss += dice_loss(F.sigmoid(logits), masks.float())
 
             optimizer.zero_grad()
-            grad_scaler.scale(loss).backward()
-            grad_scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            grad_scaler.step(optimizer)
-            grad_scaler.update()
+            loss.backward()
+            # grad_scaler.scale(loss).backward()
+            # grad_scaler.unscale_(optimizer)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            # grad_scaler.step(optimizer)
+            optimizer.step()
+            # grad_scaler.update()
             mask_pred = (F.sigmoid(logits) > 0.5).float()
 
             train_loss += loss.item()
@@ -116,7 +147,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             train_l_iou += iou(mask_pred, lacken_masks)
             train_acc += pixel_accuracy(mask_pred, masks)
             train_l_acc += pixel_accuracy(mask_pred, lacken_masks)
-
+            train_bal_acc += balanced_accuracy(mask_pred, masks)
+            train_l_bal_acc += balanced_accuracy(mask_pred, lacken_masks)
         train_loss /= len(trainloader)
         train_dice /= len(trainloader)
         train_iou /= len(trainloader)
@@ -124,6 +156,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         train_l_acc /= len(trainloader)
         train_l_dice /= len(trainloader)
         train_l_iou /= len(trainloader)
+        train_l_bal_acc /= len(trainloader)
+        train_bal_acc /= len(trainloader)
         train_losses.append(train_loss)
         train_dices.append(train_dice)
         train_ious.append(train_iou)
@@ -131,6 +165,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         train_l_accs.append(train_l_acc)
         train_l_ious.append(train_l_iou)
         train_l_dices.append(train_l_dice)
+        train_bal_accs.append(train_bal_acc)
+        train_l_bal_accs.append(train_l_bal_acc)
 
         ######################
         # validate the model #
@@ -143,6 +179,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         val_l_dice = 0
         val_l_iou = 0
         val_l_acc = 0
+        val_l_bal_acc = 0
+        val_bal_acc = 0
         with torch.no_grad():
             for i, (images, masks, lacken_masks) in enumerate(valloader):
                 images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
@@ -158,6 +196,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
                 val_l_iou += iou(mask_pred, lacken_masks)
                 val_acc += pixel_accuracy(mask_pred, masks)
                 val_l_acc += pixel_accuracy(mask_pred, lacken_masks)
+                val_l_bal_acc += balanced_accuracy(mask_pred, masks)
+                val_bal_acc += balanced_accuracy(mask_pred, lacken_masks)
         scheduler.step(val_dice)
         val_loss /= len(valloader)
         val_dice /= len(valloader)
@@ -166,6 +206,8 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         val_l_acc /= len(valloader)
         val_l_dice /= len(valloader)
         val_l_iou /= len(valloader)
+        val_l_bal_acc /= len(valloader)
+        val_bal_acc /= len(valloader)
         val_losses.append(val_loss)
         val_dices.append(val_dice)
         val_ious.append(val_iou)
@@ -173,25 +215,28 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         val_l_accs.append(val_l_acc)
         val_l_dices.append(val_l_dice)
         val_l_ious.append(val_l_iou)
+        val_l_bal_accs.append(val_l_bal_acc)
+        val_bal_accs.append(val_bal_acc)
 
         print(f" \n Epoch: {epoch + 1} ")
         print(
-            f"TRAIN FUll: Train Loss: {train_loss:.4f} | Train DICE Coeff: {train_dice:.4f}  | Train IoU Coeff: {train_iou:.4f}|  | Train Accuracy: {train_acc * 100:.2f} ")
+            f"TRAIN FULL: Train Loss: {train_loss:.4f} | Train DICE Coeff: {train_dice:.4f}  | Train IoU Coeff: {train_iou:.4f}| | Train Bal Accuracy: {train_bal_acc * 100:.2f} | Train Accuracy: {train_acc * 100:.2f} ")
         print(
-            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.4f}  | Train IoU Coeff: {train_l_iou:.4f}|  | Train Accuracy: {train_l_acc * 100:.2f} ")
+            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.4f}  | Train IoU Coeff: {train_l_iou:.4f}|  | Train Bal Accuracy: {train_l_bal_acc * 100:.2f} |  Train Accuracy: {train_l_acc * 100:.2f} ")
         print(
-            f"VAL FULL: Val Loss: {val_loss:.4f} | Val DICE Coeff: {val_dice:.4f} | Val IoU Coeff: {val_iou:.4f}| Val Accuracy: {val_acc * 100:.2f}| ")
+            f"VAL FULL: Val Loss: {val_loss:.4f} | Val DICE Coeff: {val_dice:.4f} | Val IoU Coeff: {val_iou:.4f} | Val Bal Accuracy: {val_bal_acc * 100:.2f} | Val Accuracy: {val_acc * 100:.2f} ")
         print(
-            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.4f} | Val IoU Coeff: {val_l_iou:.4f}| Val Accuracy: {val_l_acc * 100:.2f}| ")
+            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.4f} | Val IoU Coeff: {val_l_iou:.4f} | Val Bal Accuracy: {val_l_bal_acc * 100:.2f} |  Val Accuracy: {val_l_acc * 100:.2f}| ")
 
         d = {'epoch': epoch, 'train loss': train_loss, 'valid loss': val_loss, 'train_dice': train_dice,
-             'train_l_dice': train_l_dice, 'val_dice': val_dice, 'val_l_dice': val_l_dice}
+             'train_l_dice': train_l_dice, 'train_bal_acc': train_bal_acc, 'train_l_bal_acc': train_l_bal_acc,
+             'val_dice': val_dice, 'val_l_dice': val_l_dice, 'val_l_bal_acc': val_l_bal_acc, 'val_bal_acc': val_bal_acc}
 
         with open(dict_file, 'a') as f:
             dictwriter_object = DictWriter(f,
                                            fieldnames=['epoch', 'train loss', 'valid loss', 'train_dice',
-                                                       'train_l_dice', 'val_dice',
-                                                       'val_l_dice'])
+                                                       'train_l_dice', 'train_bal_acc', 'train_l_bal_acc',
+                                                       'val_dice', 'val_l_dice', 'val_l_bal_acc', 'val_bal_acc'])
             dictwriter_object.writerow(d)
 
         if val_dice > best_dice:
