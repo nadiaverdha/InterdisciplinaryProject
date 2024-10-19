@@ -69,10 +69,10 @@ def merge(directory, type, row, notmask):
     else:
         directory = directory + "_mask"
         os.makedirs( directory, exist_ok=True)
-        output_path = directory + '/' + "VH_mask" + '_' + str(row.name) + '_merged.tiff'
+        output_path = directory + '/' + "VH_mask" + '_' + str(row.name) + '_merged.tif'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
-        output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tiff'
+        output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tif'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
 
@@ -175,6 +175,7 @@ class ImageDataset(Dataset):
                 lacken_mask = augmented['masks'][1]
 
             return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(lacken_mask).unsqueeze(0)
+
 
 def visualize_augmentations(dataset, idx=0, samples=3):
     dataset = copy.deepcopy(dataset)
