@@ -68,38 +68,13 @@ def merge(directory, type, row, notmask):
         os.system(command)
     else:
         directory = directory + "_mask"
-        os.makedirs( directory, exist_ok=True)
+        os.makedirs(directory, exist_ok=True)
         output_path = directory + '/' + "VH_mask" + '_' + str(row.name) + '_merged.tif'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
         output_path = directory + '/' + "VV_mask" + '_' + str(row.name) + '_merged.tif'
         command = f"gdal_merge.py -o {output_path} {row.filepath[0]} {row.filepath[1]}"
         os.system(command)
-
-
-def create_lacken_mask(input_dir, output_dir):
-    tif_files = os.listdir(input_dir)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    for tif_file in tif_files:
-        with rasterio.open((input_dir + tif_file)) as src:
-            water_mask = src.read(1)
-        water_mask_uint8 = np.uint8(water_mask)
-        contours, _ = cv2.findContours(water_mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        lacken_mask = np.zeros_like(water_mask)
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < 1000000:
-                cv2.drawContours(lacken_mask, [contour], -1, 1, thickness=-1)
-        out_meta = src.meta.copy()
-        out_meta.update({"driver": "GTiff", "height": lacken_mask.shape[0], "width": lacken_mask.shape[1], "count": 1})
-
-        output_filename = os.path.splitext(os.path.basename(tif_file))[0] + "_lacken_mask.tif"
-        output_filepath = os.path.join(output_dir, output_filename)
-
-        with rasterio.open(output_filepath, "w", **out_meta) as dst:
-            dst.write(lacken_mask.astype(rasterio.uint8), 1)
 
 
 def mask_files(shapefile, input_dir, output_dir):
@@ -130,6 +105,30 @@ def mask_files(shapefile, input_dir, output_dir):
 
             with rasterio.open(output_filepath, "w", **out_meta) as dest:
                 dest.write(out_image)
+
+def create_lacken_mask(input_dir, output_dir):
+    tif_files = os.listdir(input_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    for tif_file in tif_files:
+        with rasterio.open((input_dir + tif_file)) as src:
+            water_mask = src.read(1)
+        water_mask_uint8 = np.uint8(water_mask)
+        contours, _ = cv2.findContours(water_mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        lacken_mask = np.zeros_like(water_mask)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 1000000:
+                cv2.drawContours(lacken_mask, [contour], -1, 1, thickness=-1)
+        out_meta = src.meta.copy()
+        out_meta.update({"driver": "GTiff", "height": lacken_mask.shape[0], "width": lacken_mask.shape[1], "count": 1})
+
+        output_filename = os.path.splitext(os.path.basename(tif_file))[0] + "_lacken_mask.tif"
+        output_filepath = os.path.join(output_dir, output_filename)
+
+        with rasterio.open(output_filepath, "w", **out_meta) as dst:
+            dst.write(lacken_mask.astype(rasterio.uint8), 1)
 
 
 def make_list(dir, mask_dir, name):
@@ -169,12 +168,13 @@ class ImageDataset(Dataset):
             lacken_mask = np.array(lacken_mask, dtype=np.float32)
 
             if self.transform:
-                augmented = self.transform(image=image, masks  = [mask,lacken_mask])
+                augmented = self.transform(image=image, masks=[mask, lacken_mask])
                 image = augmented['image']
-                mask= augmented['masks'][0]
+                mask = augmented['masks'][0]
                 lacken_mask = augmented['masks'][1]
 
-            return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(lacken_mask).unsqueeze(0)
+            return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(
+                lacken_mask).unsqueeze(0)
 
 
 def visualize_augmentations(dataset, idx=0, samples=3):
@@ -184,6 +184,25 @@ def visualize_augmentations(dataset, idx=0, samples=3):
     for i in range(samples):
         # print(i)
         image, mask, lacken_mask = dataset[idx]
+        # print(image.squeeze(0).shape)
+        ax[i, 0].imshow(image.squeeze(0))
+        ax[i, 1].imshow(mask.squeeze(0), interpolation="nearest")
+        ax[i, 2].imshow(lacken_mask.squeeze(0), interpolation="nearest")
+        ax[i, 0].set_title("Augmented image")
+        ax[i, 1].set_title("mask")
+        ax[i, 2].set_title("Lacken mask")
+        ax[i, 0].set_axis_off()
+        ax[i, 1].set_axis_off()
+        ax[i, 2].set_axis_off()
+    plt.tight_layout()
+    plt.show()
+
+
+def visualize_offline_augmentations(dataset, samples=3):
+    dataset = copy.deepcopy(dataset)
+    figure, ax = plt.subplots(nrows=samples, ncols=3, figsize=(10, 13))
+    for i in range(3):
+        image, mask, lacken_mask = dataset[i]
         # print(image.squeeze(0).shape)
         ax[i, 0].imshow(image.squeeze(0))
         ax[i, 1].imshow(mask.squeeze(0), interpolation="nearest")
