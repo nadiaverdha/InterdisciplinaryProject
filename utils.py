@@ -102,7 +102,7 @@ def balanced_accuracy(logits, targets):
     return balanced_acc.item()
 
 
-def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, grad_scaler, scheduler, dict_file,
+def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, dict_file,
                    model_file, best_dice=0, patience=10):
     train_losses, val_losses = [], []
     train_dices, train_l_dices, val_dices, val_l_dices = [], [], [], []
@@ -198,7 +198,7 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
                 val_l_acc += pixel_accuracy(mask_pred, lacken_masks)
                 val_l_bal_acc += balanced_accuracy(mask_pred, masks)
                 val_bal_acc += balanced_accuracy(mask_pred, lacken_masks)
-        scheduler.step(val_dice)
+        # scheduler.step(val_dice)
         val_loss /= len(valloader)
         val_dice /= len(valloader)
         val_iou /= len(valloader)
