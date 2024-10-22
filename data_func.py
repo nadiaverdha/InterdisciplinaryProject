@@ -11,6 +11,7 @@ import time
 import rasterio
 import glob
 import cv2
+from PIL import Image, ImageOps
 from rasterio.plot import show
 import rasterio
 import numpy as np
@@ -216,3 +217,117 @@ def visualize_offline_augmentations(dataset, samples=3):
     plt.tight_layout()
     plt.show()
 
+
+def transform_matrix_offset_center(matrix, x, y):
+    o_x = float(x) / 2 + 0.5
+    o_y = float(y) / 2 + 0.5
+    offset_matrix = np.array([[1, 0, o_x], [0, 1, o_y], [0, 0, 1]])
+    reset_matrix = np.array([[1, 0, -o_x], [0, 1, -o_y], [0, 0, 1]])
+    transform_matrix = np.dot(np.dot(offset_matrix, matrix), reset_matrix)
+    return transform_matrix
+
+
+def apply_transform(x, transform_matrix, channel_axis=0, fill_mode='nearest', cval=0.):
+    x = np.rollaxis(x, channel_axis, 0)
+    final_affine_matrix = transform_matrix[:2, :2]
+    final_offset = transform_matrix[:2, 2]
+    channel_images = [ndi.affine_transform(
+        x_channel,
+        final_affine_matrix,
+        final_offset,
+        order=1,
+        mode=fill_mode,
+        cval=cval) for x_channel in x]
+    x = np.stack(channel_images, axis=0)
+    x = np.rollaxis(x, 0, channel_axis + 1)
+    return x
+
+
+def transform(x, rotation_deg, fill_mode='nearest', cval=0):
+    channel_axis = 0
+    row_axis = 1
+    col_axis = 2
+
+    theta = np.deg2rad(rotation_deg)
+    transform_matrix = np.array([[np.cos(theta), -np.sin(theta), 0],
+                                 [np.sin(theta), np.cos(theta), 0],
+                                 [0, 0, 1]])
+    h, w = x.shape[row_axis], x.shape[col_axis]
+    transform_matrix = transform_matrix_offset_center(transform_matrix, h, w)
+    return apply_transform(x, transform_matrix, channel_axis, fill_mode=fill_mode, cval=cval)
+
+
+def augment_images_and_masks(images_folder, mask_folder, lacken_mask_folder, save_folder,
+                             rotation_deg=[-15, -10, -5, 0, 5, 10, 15], X_flip=[0, 1], Y_flip=[0, 1]):
+    os.makedirs(os.path.join(save_folder, images_folder), exist_ok=True)
+    os.makedirs(os.path.join(save_folder, mask_folder), exist_ok=True)
+    os.makedirs(os.path.join(save_folder, lacken_mask_folder), exist_ok=True)
+
+    image_files = [f for f in os.listdir(images_folder) if f.endswith(('.tif', '.tiff'))]
+    masks = [f for f in os.listdir(mask_folder) if f.endswith(('.tif', '.tiff'))]
+    lacken_masks = [f for f in os.listdir(lacken_mask_folder) if f.endswith(('.tif', '.tiff'))]
+    for i in range(len(image_files)):
+        print(f'Processing image and mask num: {i}')
+        for r in range(len(rotation_deg)):
+            for x in range(len(X_flip)):
+                for y in range(len(Y_flip)):
+                    # Load image, mask, and lacken mask
+                    image_path = os.path.join(images_folder, image_files[i])
+                    mask_path = os.path.join(mask_folder, masks[i])
+                    lacken_mask_path = os.path.join(lacken_mask_folder, lacken_masks[i])
+
+                    image = Image.open(image_path)
+                    mask = Image.open(mask_path)
+                    lacken_mask = Image.open(lacken_mask_path)
+
+                    # if X_flip[x] == 1:
+                    #     image = ImageOps.mirror(image)
+                    #     mask = ImageOps.mirror(mask)
+                    #     lacken_mask = ImageOps.mirror(lacken_mask)
+                    # if Y_flip[y] == 1:
+                    #     image = ImageOps.flip(image)
+                    #     mask = ImageOps.flip(mask)
+                    #     lacken_mask = ImageOps.flip(lacken_mask)
+
+                    # Convert to numpy array
+                    image = np.array(image, dtype=np.float32)
+                    mask = np.array(mask, dtype=np.float32)
+                    lacken_mask = np.array(lacken_mask, dtype=np.float32)
+
+                    # If single-channel, expand dimensions
+                    if len(image.shape) == 2:
+                        image = np.expand_dims(image, axis=2)
+                    if len(mask.shape) == 2:
+                        mask = np.expand_dims(mask, axis=2)
+                    if len(lacken_mask.shape) == 2:
+                        lacken_mask = np.expand_dims(lacken_mask, axis=2)
+
+                    # Apply transformation
+                    image = np.moveaxis(image, 2, 0)
+                    mask = np.moveaxis(mask, 2, 0)
+                    lacken_mask = np.moveaxis(lacken_mask, 2, 0)
+
+                    image_transformed = transform(image, rotation_deg=rotation_deg[r])
+                    mask_transformed = transform(mask, rotation_deg=rotation_deg[r])
+                    lacken_mask_transformed = transform(lacken_mask, rotation_deg=rotation_deg[r])
+
+                    # Move back to (h, w, channel)
+                    image_transformed = np.moveaxis(image_transformed, 0, 2)
+                    mask_transformed = np.moveaxis(mask_transformed, 0, 2)
+                    lacken_mask_transformed = np.moveaxis(lacken_mask_transformed, 0, 2)
+
+                    # Prepare file names
+                    out_file = f'_rotate_{rotation_deg[r]:+02d}-xflip_{X_flip[x]}-yflip_{Y_flip[y]}'
+                    img_name = os.path.basename(image_files[i]).split('.')[0] + out_file + '.tif'
+
+                    # Save transformed images and masks
+                    image_save_path = os.path.join(save_folder, images_folder, img_name)
+                    mask_save_path = os.path.join(save_folder, mask_folder, img_name)
+                    lacken_mask_save_path = os.path.join(save_folder, lacken_mask_folder, img_name)
+
+                    Image.fromarray(image_transformed[:, :, 0]).save(image_save_path)
+                    Image.fromarray(mask_transformed[:, :, 0]).save(mask_save_path)
+                    Image.fromarray(lacken_mask_transformed[:, :, 0]).save(lacken_mask_save_path)
+
+                    print(
+                        f'Saved augmented data for image {i} to: {image_save_path}, {mask_save_path}, {lacken_mask_save_path}')
