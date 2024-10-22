@@ -27,7 +27,7 @@ from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 import fiona
 from fiona.transform import transform_geom
-
+import scipy.ndimage as ndi
 
 # to merge the files
 def merge_files(df, type='VV'):
@@ -156,7 +156,7 @@ class ImageDataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
-        if self.images[idx].endswith(('.tif', '.tiff')):
+        if self.images[idx].endswith(('.tif', '.tiff')) and self.masks[idx].endswith(('.tif', '.tiff')) and self.lacken_masks[idx].endswith(('.tif', '.tiff')):
             image_path = os.path.join(self.images_folder, self.images[idx])
             mask_path = os.path.join(self.mask_folder, self.masks[idx])
             lacken_mask_path = os.path.join(self.lacken_mask_folder, self.lacken_masks[idx])
