@@ -78,7 +78,7 @@ def merge(directory, type, row, notmask):
         os.system(command)
 
 
-def mask_files(shapefile, input_dir, output_dir):
+def mask_files(shape, input_dir, output_dir):
     tif_files = os.listdir(input_dir)
     for tiff in tif_files:
         output_filepath = os.path.join(output_dir, tiff)
@@ -86,7 +86,7 @@ def mask_files(shapefile, input_dir, output_dir):
             # print(output_filepath)
             with rasterio.open(output_filepath) as src:
                 raster_crs = src.crs
-            with fiona.open('shape_file.shp', "r") as shapefile:
+            with fiona.open(shape, "r") as shapefile:
                 shapes = []
                 for feature in shapefile:
                     geom = feature["geometry"]
@@ -156,6 +156,7 @@ class ImageDataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
+        # print(self.images[idx],self.masks[idx],self.lacken_masks[idx])
         if self.images[idx].endswith(('.tif', '.tiff')) and self.masks[idx].endswith(('.tif', '.tiff')) and self.lacken_masks[idx].endswith(('.tif', '.tiff')):
             image_path = os.path.join(self.images_folder, self.images[idx])
             mask_path = os.path.join(self.mask_folder, self.masks[idx])
