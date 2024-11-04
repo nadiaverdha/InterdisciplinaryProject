@@ -21,7 +21,7 @@ from torch import optim, nn
 from torch.utils.data import TensorDataset, DataLoader, Dataset
 import os
 from torch.nn import functional as F
-
+from sklearn.metrics import balanced_accuracy_score
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 import albumentations as A
 
@@ -79,31 +79,35 @@ import torch
 
 
 def balanced_accuracy(logits, targets):
+    # preds_flat = logits.view(-1)
+    # targets_flat = targets.view(-1)
+    #
+    # TP = torch.sum((preds_flat == 1) & (targets_flat == 1)).float()
+    # TN = torch.sum((preds_flat == 0) & (targets_flat == 0)).float()
+    # FP = torch.sum((preds_flat == 1) & (targets_flat == 0)).float()
+    # FN = torch.sum((preds_flat == 0) & (targets_flat == 1)).float()
+    #
+    # P = TP + FN
+    # N = TN + FP
+    #
+    # if P == 0 or N == 0:
+    #     return float('nan')
+    #
+    # sensitivity = TP / P
+    # specificity = TN / N
+    #
+    # # Calculate balanced accuracy
+    # balanced_acc = (sensitivity + specificity) / 2.0
+
+    # return balanced_acc.item()
     preds_flat = logits.view(-1)
     targets_flat = targets.view(-1)
+    return balanced_accuracy_score(preds_flat, targets_flat)
 
-    TP = torch.sum((preds_flat == 1) & (targets_flat == 1)).float()
-    TN = torch.sum((preds_flat == 0) & (targets_flat == 0)).float()
-    FP = torch.sum((preds_flat == 1) & (targets_flat == 0)).float()
-    FN = torch.sum((preds_flat == 0) & (targets_flat == 1)).float()
-
-    P = TP + FN
-    N = TN + FP
-
-    if P == 0 or N == 0:
-        return float('nan')
-
-    sensitivity = TP / P
-    specificity = TN / N
-
-    # Calculate balanced accuracy
-    balanced_acc = (sensitivity + specificity) / 2.0
-
-    return balanced_acc.item()
 
 
 def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, dict_file,
-                   model_file, best_dice=0, patience=10):
+                   model_file, best_dice=0, patience=10,grad_scaler = None):
     train_losses, val_losses = [], []
     train_dices, train_l_dices, val_dices, val_l_dices = [], [], [], []
     train_ious, train_l_ious, val_ious, val_l_ious = [], [], [], []
@@ -131,13 +135,17 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             loss += dice_loss(F.sigmoid(logits), masks.float())
 
             optimizer.zero_grad()
-            loss.backward()
-            # grad_scaler.scale(loss).backward()
-            # grad_scaler.unscale_(optimizer)
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            # grad_scaler.step(optimizer)
-            optimizer.step()
-            # grad_scaler.update()
+            if grad_scaler:
+                grad_scaler.scale(loss).backward()
+                grad_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                optimizer.step()
+
             mask_pred = (F.sigmoid(logits) > 0.5).float()
 
             train_loss += loss.item()
@@ -186,7 +194,6 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
                 images, masks, lacken_masks = images.to(device), masks.to(device), lacken_masks.to(device)
                 logits = model(images)
                 loss = criterion(logits, masks.float())
-
                 mask_pred = (F.sigmoid(logits) > 0.5).float()
                 loss += dice_loss(F.sigmoid(logits), masks.float())
                 val_loss += loss.item()
@@ -242,3 +249,31 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         if val_dice > best_dice:
             best_dice = val_dice
             torch.save(model.state_dict(), model_file)
+
+
+def display_batch(images, masks, pred,lacken_masks):
+    print(f"Dice Coefficient: {dice_coeff(pred.to(device), masks.to(device))}")
+    print(f"Dice Coefficient Lackens: {dice_coeff(pred.to(device), lacken_masks.to(device))}")
+
+    images = images.permute(0, 2, 3, 1)
+    masks = masks.permute(0, 2, 3, 1)
+    pred = pred.permute(0, 2, 3, 1)
+
+    images = images.cpu().numpy()
+    masks = masks.cpu().numpy()
+    pred = pred.cpu().numpy()
+
+    images = np.concatenate(images, axis=1)
+    masks = np.concatenate(masks, axis=1)
+    pred = np.concatenate(pred, axis=1)
+
+    fig, ax = plt.subplots(3, 1, figsize=(20, 6))
+    fig.tight_layout()
+    ax[0].imshow(images)
+    ax[0].set_title('Images')
+    ax[1].imshow(masks, cmap='gray')
+    ax[1].set_title('Masks')
+    ax[2].imshow(pred, cmap='gray')
+    ax[2].set_title('Predictions')
+
+    plt.show()
