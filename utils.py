@@ -22,9 +22,10 @@ from torch.utils.data import TensorDataset, DataLoader, Dataset
 import os
 from torch.nn import functional as F
 from sklearn.metrics import balanced_accuracy_score
+
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 import albumentations as A
-
+import numpy as np
 from torch.cuda.amp import autocast, GradScaler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,7 +62,7 @@ def iou(logits, targets, smooth=1):
     union = logits.sum() + targets.sum() - intersection
     if union == 0:
         return 1
-    iou =( intersection +1) / (union +1)
+    iou = (intersection + 1) / (union + 1)
     return iou.item()
 
 
@@ -75,39 +76,37 @@ def pixel_accuracy(logits, targets):
     return accuracy.item()
 
 
-import torch
-
-
 def balanced_accuracy(logits, targets):
-    # preds_flat = logits.view(-1)
-    # targets_flat = targets.view(-1)
-    #
-    # TP = torch.sum((preds_flat == 1) & (targets_flat == 1)).float()
-    # TN = torch.sum((preds_flat == 0) & (targets_flat == 0)).float()
-    # FP = torch.sum((preds_flat == 1) & (targets_flat == 0)).float()
-    # FN = torch.sum((preds_flat == 0) & (targets_flat == 1)).float()
-    #
-    # P = TP + FN
-    # N = TN + FP
-    #
-    # if P == 0 or N == 0:
-    #     return float('nan')
-    #
-    # sensitivity = TP / P
-    # specificity = TN / N
-    #
-    # # Calculate balanced accuracy
-    # balanced_acc = (sensitivity + specificity) / 2.0
-
-    # return balanced_acc.item()
     preds_flat = logits.view(-1)
     targets_flat = targets.view(-1)
-    return balanced_accuracy_score(preds_flat, targets_flat)
 
+    TP = torch.sum((preds_flat == 1) & (targets_flat == 1)).float()
+    TN = torch.sum((preds_flat == 0) & (targets_flat == 0)).float()
+    FP = torch.sum((preds_flat == 1) & (targets_flat == 0)).float()
+    FN = torch.sum((preds_flat == 0) & (targets_flat == 1)).float()
+
+    P = TP + FN
+    N = TN + FP
+
+    if P == 0 or N == 0:
+        return float('nan')
+
+    sensitivity = TP / P
+    specificity = TN / N
+
+    balanced_acc = (sensitivity + specificity) / 2.0
+
+    return balanced_acc.item()
+    # preds_flat = (logits.view(-1) > 0.5).int()  # or logits.argmax(dim=1) for multiclass
+    # targets_flat = targets.view(-1)
+    # return balanced_accuracy_score(preds_flat, targets_flat)
+
+
+grad_scaler = torch.cuda.amp.GradScaler()
 
 
 def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, dict_file,
-                   model_file, best_dice=0, patience=10,grad_scaler = None):
+                   model_file, best_dice=0):
     train_losses, val_losses = [], []
     train_dices, train_l_dices, val_dices, val_l_dices = [], [], [], []
     train_ious, train_l_ious, val_ious, val_l_ious = [], [], [], []
@@ -125,7 +124,7 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
         train_l_acc = 0
         train_l_dice = 0
         train_l_iou = 0
-        train_bal_acc= 0
+        train_bal_acc = 0
         train_l_bal_acc = 0
 
         for i, (images, masks, lacken_masks) in enumerate(trainloader):
@@ -135,16 +134,12 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             loss += dice_loss(F.sigmoid(logits), masks.float())
 
             optimizer.zero_grad()
-            if grad_scaler:
-                grad_scaler.scale(loss).backward()
-                grad_scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
-            else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                optimizer.step()
+
+            grad_scaler.scale(loss).backward()
+            grad_scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
 
             mask_pred = (F.sigmoid(logits) > 0.5).float()
 
@@ -205,7 +200,6 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
                 val_l_acc += pixel_accuracy(mask_pred, lacken_masks)
                 val_l_bal_acc += balanced_accuracy(mask_pred, masks)
                 val_bal_acc += balanced_accuracy(mask_pred, lacken_masks)
-        # scheduler.step(val_dice)
         val_loss /= len(valloader)
         val_dice /= len(valloader)
         val_iou /= len(valloader)
@@ -227,13 +221,13 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
 
         print(f" \n Epoch: {epoch + 1} ")
         print(
-            f"TRAIN FULL: Train Loss: {train_loss:.4f} | Train DICE Coeff: {train_dice:.4f}  | Train IoU Coeff: {train_iou:.4f}| | Train Bal Accuracy: {train_bal_acc * 100:.2f} | Train Accuracy: {train_acc * 100:.2f} ")
+            f"TRAIN FULL: Train Loss: {train_loss:.2f} | Train DICE Coeff: {train_dice:.2f}  | Train IoU Coeff: {train_iou:.2f}| | Train Bal Accuracy: {train_bal_acc * 100:.2f} | Train Accuracy: {train_acc * 100:.2f} ")
         print(
-            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.4f}  | Train IoU Coeff: {train_l_iou:.4f}|  | Train Bal Accuracy: {train_l_bal_acc * 100:.2f} |  Train Accuracy: {train_l_acc * 100:.2f} ")
+            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.2f}  | Train IoU Coeff: {train_l_iou:.2f} | Train Bal Accuracy: {train_l_bal_acc * 100:.2f} |  Train Accuracy: {train_l_acc * 100:.2f} ")
         print(
-            f"VAL FULL: Val Loss: {val_loss:.4f} | Val DICE Coeff: {val_dice:.4f} | Val IoU Coeff: {val_iou:.4f} | Val Bal Accuracy: {val_bal_acc * 100:.2f} | Val Accuracy: {val_acc * 100:.2f} ")
+            f"VAL FULL: Val Loss: {val_loss:.2f} | Val DICE Coeff: {val_dice:.2f} | Val IoU Coeff: {val_iou:.2f} | Val Bal Accuracy: {val_bal_acc * 100:.2f} | Val Accuracy: {val_acc * 100:.2f} ")
         print(
-            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.4f} | Val IoU Coeff: {val_l_iou:.4f} | Val Bal Accuracy: {val_l_bal_acc * 100:.2f} |  Val Accuracy: {val_l_acc * 100:.2f}| ")
+            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.2f} | Val IoU Coeff: {val_l_iou:.2f} | Val Bal Accuracy: {val_l_bal_acc * 100:.2f} |  Val Accuracy: {val_l_acc * 100:.2f}| ")
 
         d = {'epoch': epoch, 'train loss': train_loss, 'valid loss': val_loss, 'train_dice': train_dice,
              'train_l_dice': train_l_dice, 'train_bal_acc': train_bal_acc, 'train_l_bal_acc': train_l_bal_acc,
@@ -251,10 +245,13 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
             torch.save(model.state_dict(), model_file)
 
 
-def display_batch(images, masks, pred,lacken_masks):
+def display_batch(images, masks, pred, lacken_masks):
     print(f"Dice Coefficient: {dice_coeff(pred.to(device), masks.to(device))}")
     print(f"Dice Coefficient Lackens: {dice_coeff(pred.to(device), lacken_masks.to(device))}")
-
+    print(f"IoU: {iou(pred.to(device), masks.to(device))}")
+    print(f"IoU Lackens: {iou(pred.to(device), lacken_masks.to(device))}")
+    print(f"Accuracy: {balanced_accuracy(pred.to(device), masks.to(device))}")
+    print(f"Accuracy Lackens: {balanced_accuracy(pred.to(device), lacken_masks.to(device))}")
     images = images.permute(0, 2, 3, 1)
     masks = masks.permute(0, 2, 3, 1)
     pred = pred.permute(0, 2, 3, 1)
@@ -267,7 +264,7 @@ def display_batch(images, masks, pred,lacken_masks):
     masks = np.concatenate(masks, axis=1)
     pred = np.concatenate(pred, axis=1)
 
-    fig, ax = plt.subplots(3, 1, figsize=(20, 6))
+    fig, ax = plt.subplots(3, 1, figsize=(20, 10))
     fig.tight_layout()
     ax[0].imshow(images)
     ax[0].set_title('Images')
