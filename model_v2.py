@@ -97,7 +97,7 @@ class UNetFT(nn.Module):
         self.encoder4 = nn.Sequential(*list(self.effnet.features.children())[3])
         self.encoder5 = nn.Sequential(*list(self.effnet.features.children())[4])
 
-        del self.effnet
+        # del self.effnet
 
         for param in self.encoder1.parameters():
             param.requires_grad = False
