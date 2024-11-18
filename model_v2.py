@@ -74,7 +74,7 @@ class DecoderBlockv2(nn.Module):
 
 class UNetFT(nn.Module):
     def __init__(self, n_classes, pretrained=True,
-                 in_channels =1, layer1_features=32, layer2_features=16,
+                 in_channels = 1, layer1_features=32, layer2_features=16,
                  layer3_features=24, layer4_features=40, layer5_features=80):
         super(UNetFT, self).__init__()
         self.effnet = models.efficientnet_b0(pretrained=pretrained)
@@ -97,7 +97,7 @@ class UNetFT(nn.Module):
         self.encoder4 = nn.Sequential(*list(self.effnet.features.children())[3])
         self.encoder5 = nn.Sequential(*list(self.effnet.features.children())[4])
 
-        # del self.effnet
+        del self.effnet
 
         for param in self.encoder1.parameters():
             param.requires_grad = False
@@ -130,6 +130,7 @@ class UNetFT(nn.Module):
         x = self.decoder5(x, x1)
         logits = self.final_conv(x)
         return logits
+
 
 
 

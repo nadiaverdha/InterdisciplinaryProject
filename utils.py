@@ -221,13 +221,13 @@ def train_evaluate(model, epochs, trainloader, valloader, optimizer, criterion, 
 
         print(f" \n Epoch: {epoch + 1} ")
         print(
-            f"TRAIN FULL: Train Loss: {train_loss:.2f} | Train DICE Coeff: {train_dice:.2f}  | Train IoU Coeff: {train_iou:.2f}| | Train Bal Accuracy: {train_bal_acc * 100:.2f} | Train Accuracy: {train_acc * 100:.2f} ")
+            f"TRAIN FULL: Train Loss: {train_loss:.4f} | Train DICE Coeff: {train_dice:.4f}  | Train IoU Coeff: {train_iou:.4f}| | Train Bal Accuracy: {train_bal_acc * 100:.2f} | Train Accuracy: {train_acc * 100:.2f} ")
         print(
-            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.2f}  | Train IoU Coeff: {train_l_iou:.2f} | Train Bal Accuracy: {train_l_bal_acc * 100:.2f} |  Train Accuracy: {train_l_acc * 100:.2f} ")
+            f"TRAIN LACKENS: Train DICE Coeff: {train_l_dice:.4f}  | Train IoU Coeff: {train_l_iou:.4f} | Train Bal Accuracy: {train_l_bal_acc * 100:.2f} |  Train Accuracy: {train_l_acc * 100:.2f} ")
         print(
-            f"VAL FULL: Val Loss: {val_loss:.2f} | Val DICE Coeff: {val_dice:.2f} | Val IoU Coeff: {val_iou:.2f} | Val Bal Accuracy: {val_bal_acc * 100:.2f} | Val Accuracy: {val_acc * 100:.2f} ")
+            f"VAL FULL: Val Loss: {val_loss:.4f} | Val DICE Coeff: {val_dice:.4f} | Val IoU Coeff: {val_iou:.4f} | Val Bal Accuracy: {val_bal_acc * 100:.2f} | Val Accuracy: {val_acc * 100:.2f} ")
         print(
-            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.2f} | Val IoU Coeff: {val_l_iou:.2f} | Val Bal Accuracy: {val_l_bal_acc * 100:.2f} |  Val Accuracy: {val_l_acc * 100:.2f}| ")
+            f"VAL LACKENS: Val DICE Coeff: {val_l_dice:.4f} | Val IoU Coeff: {val_l_iou:.4f} | Val Bal Accuracy: {val_l_bal_acc * 100:.2f} |  Val Accuracy: {val_l_acc * 100:.2f}| ")
 
         d = {'epoch': epoch, 'train loss': train_loss, 'valid loss': val_loss, 'train_dice': train_dice,
              'train_l_dice': train_l_dice, 'train_bal_acc': train_bal_acc, 'train_l_bal_acc': train_l_bal_acc,
@@ -298,19 +298,19 @@ def display_batch_all(images, masks, pred, pred2, pred3, pred4, lacken_masks, i)
     pred3 = np.concatenate(pred3, axis=1)
     pred4 = np.concatenate(pred4, axis=1)
 
-    fig, ax = plt.subplots(6, 1, figsize=(15, 10))
+    fig, ax = plt.subplots(6, 1, figsize=(30, 8))
     fig.tight_layout()
     ax[0].imshow(images)
     ax[0].set_title('Images')
     ax[1].imshow(masks, cmap='gray')
     ax[1].set_title('Masks')
     ax[2].imshow(pred, cmap='gray')
-    ax[2].set_title('Predictions Model ' + str(1))
+    ax[2].set_title('Predictions Model I' )
     ax[3].imshow(pred2, cmap='gray')
-    ax[3].set_title('Predictions Model ' + str(2))
+    ax[3].set_title('Predictions Model II' )
     ax[4].imshow(pred3, cmap='gray')
-    ax[4].set_title('Predictions Model ' + str(3))
+    ax[4].set_title('Predictions Model III' )
     ax[5].imshow(pred4, cmap='gray')
-    ax[5].set_title('Predictions Model ' + str(4))
+    ax[5].set_title('Predictions Model IV' )
     plt.savefig('./inf' + '.png')
     plt.show()
