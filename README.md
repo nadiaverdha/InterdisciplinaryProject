@@ -6,7 +6,7 @@ This project aims to develop a U-Net model for segmenting water bodies and monit
 
 
 #### Project Structure
-- `data_func.py` & 'data_prep.ipynb' - data preparation of my dataset for the model. Here the radar images are merged together, separate Lacken masks are created, and dataset is divided into train, validation and test set
+- `data_func.py` & `data_prep.ipynb` - data preparation of my dataset for the model. Here the radar images are merged together, separate Lacken masks are created, and dataset is divided into train, validation and test set
 - `model.py` - contains Encoder, Decoder and UNet classes
 - `model.py` - contains an UNet model class which incorporates a pre-trained model
 - `utils.py` - contains the necessary functions needed for training the model and for calculating the metrics
