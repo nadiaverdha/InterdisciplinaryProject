@@ -274,3 +274,43 @@ def display_batch(images, masks, pred, lacken_masks):
     ax[2].set_title('Predictions')
 
     plt.show()
+
+
+def display_batch_all(images, masks, pred, pred2, pred3, pred4, lacken_masks, i):
+    images = images.permute(0, 2, 3, 1)
+    masks = masks.permute(0, 2, 3, 1)
+    pred = pred.permute(0, 2, 3, 1)
+    pred4 = pred4.permute(0, 2, 3, 1)
+    pred2 = pred2.permute(0, 2, 3, 1)
+    pred3 = pred3.permute(0, 2, 3, 1)
+
+    images = images.cpu().numpy()
+    masks = masks.cpu().numpy()
+    pred = pred.cpu().numpy()
+    pred2 = pred2.cpu().numpy()
+    pred3 = pred3.cpu().numpy()
+    pred4 = pred4.cpu().numpy()
+
+    images = np.concatenate(images, axis=1)
+    masks = np.concatenate(masks, axis=1)
+    pred = np.concatenate(pred, axis=1)
+    pred2 = np.concatenate(pred2, axis=1)
+    pred3 = np.concatenate(pred3, axis=1)
+    pred4 = np.concatenate(pred4, axis=1)
+
+    fig, ax = plt.subplots(6, 1, figsize=(15, 10))
+    fig.tight_layout()
+    ax[0].imshow(images)
+    ax[0].set_title('Images')
+    ax[1].imshow(masks, cmap='gray')
+    ax[1].set_title('Masks')
+    ax[2].imshow(pred, cmap='gray')
+    ax[2].set_title('Predictions Model ' + str(1))
+    ax[3].imshow(pred2, cmap='gray')
+    ax[3].set_title('Predictions Model ' + str(2))
+    ax[4].imshow(pred3, cmap='gray')
+    ax[4].set_title('Predictions Model ' + str(3))
+    ax[5].imshow(pred4, cmap='gray')
+    ax[5].set_title('Predictions Model ' + str(4))
+    plt.savefig('./inf' + '.png')
+    plt.show()
