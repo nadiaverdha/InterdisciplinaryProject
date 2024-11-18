@@ -10,6 +10,6 @@ This project aims to develop a U-Net model for segmenting water bodies and monit
 - `model.py` - contains Encoder, Decoder and UNet classes
 - `model.py` - contains an UNet model class which incorporates a pre-trained model
 - `utils.py` - contains the necessary functions needed for training the model and for calculating the metrics
-- `model_utils.py` - contains function for training, evaluating, function for saving best model
+- `model_utils.py` - contains function for training, evaluating, saving best model
 - `train&evaluate_model***.ipynb`- the notebooks 1 to 5 are used for training the different models and evaluating them on test set
 - `inference.ipynb`  -  the results of all the models are shown in one notebook through plots
