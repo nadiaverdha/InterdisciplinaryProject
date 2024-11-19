@@ -266,7 +266,6 @@ def display_batch(images, masks, pred, lacken_masks):
 
     correct_lake_pixels = ((pred_binary == 1) & (masks == 1)).sum().item()  #
 
-
     # print(f"Total Pixels in Lacken Mask: {lacken_pixels}")
     print(f"Correctly Identified Pixels: {correct_pixels}/{total_pixels} ({correct_pixels / total_pixels:.2%})")
     print(
@@ -327,14 +326,12 @@ def display_batch_all(images, masks, pred, pred2, pred3, pred4, lacken_masks, i)
     ax[1].imshow(masks, cmap='gray')
     ax[1].set_title('Masks')
     ax[2].imshow(pred, cmap='gray')
-    ax[2].set_title('Predictions Model I' )
+    ax[2].set_title('Predictions Model I')
     ax[3].imshow(pred2, cmap='gray')
-    ax[3].set_title('Predictions Model II' )
+    ax[3].set_title('Predictions Model II')
     ax[4].imshow(pred3, cmap='gray')
-    ax[4].set_title('Predictions Model III' )
+    ax[4].set_title('Predictions Model III')
     ax[5].imshow(pred4, cmap='gray')
-    ax[5].set_title('Predictions Model IV' )
+    ax[5].set_title('Predictions Model IV')
     plt.savefig('./inf' + '.png')
     plt.show()
-
-
