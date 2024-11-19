@@ -34,6 +34,7 @@ class OutConv(nn.Module):
         # return self.sigmoid(self.conv(x))
         return self.conv(x)
 
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -47,6 +48,7 @@ class DoubleConv(nn.Module):
 
     def forward(self, x):
         return self.conv(x)
+
 
 class DecoderBlockv2(nn.Module):
     def __init__(self, in_channels, out_channels, upsample=1):
@@ -74,7 +76,7 @@ class DecoderBlockv2(nn.Module):
 
 class UNetFT(nn.Module):
     def __init__(self, n_classes, pretrained=True,
-                 in_channels = 1, layer1_features=32, layer2_features=16,
+                 in_channels=1, layer1_features=32, layer2_features=16,
                  layer3_features=24, layer4_features=40, layer5_features=80):
         super(UNetFT, self).__init__()
         self.effnet = models.efficientnet_b0(pretrained=pretrained)
@@ -87,7 +89,6 @@ class UNetFT(nn.Module):
         self.layer3_features = layer3_features
         self.layer4_features = layer4_features
         self.layer5_features = layer5_features
-
 
         self.effnet.features[0][0] = nn.Conv2d(in_channels, layer1_features, kernel_size=3, stride=2, padding=1,
                                                bias=False)
@@ -106,13 +107,11 @@ class UNetFT(nn.Module):
 
         self.bottleneck = DoubleConv(self.layer5_features, self.layer5_features)
 
-
         self.decoder1 = DecoderBlockv2(self.layer5_features, self.layer4_features)
         self.decoder2 = DecoderBlockv2(self.layer4_features, self.layer3_features)
         self.decoder3 = DecoderBlockv2(self.layer3_features, self.layer2_features)
         self.decoder4 = DecoderBlockv2(self.layer2_features, self.layer1_features, upsample=0)
         self.decoder5 = DecoderBlockv2(self.layer1_features, self.layer1_features)
-
 
         self.final_conv = OutConv(self.layer1_features, self.n_classes)
 
@@ -130,9 +129,3 @@ class UNetFT(nn.Module):
         x = self.decoder5(x, x1)
         logits = self.final_conv(x)
         return logits
-
-
-
-
-
-
