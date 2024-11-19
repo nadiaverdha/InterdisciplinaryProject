@@ -156,7 +156,7 @@ class ImageDataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
-        # print(self.images[idx],self.masks[idx],self.lacken_masks[idx])
+
         if self.images[idx].endswith(('.tif', '.tiff')) and self.masks[idx].endswith(('.tif', '.tiff')) and self.lacken_masks[idx].endswith(('.tif', '.tiff')):
             image_path = os.path.join(self.images_folder, self.images[idx])
             mask_path = os.path.join(self.mask_folder, self.masks[idx])
@@ -174,7 +174,7 @@ class ImageDataset(Dataset):
                 image = augmented['image']
                 mask = augmented['masks'][0]
                 lacken_mask = augmented['masks'][1]
-
+            print(self.images[idx], self.masks[idx], self.lacken_masks[idx])
             return torch.from_numpy(image).unsqueeze(0), torch.from_numpy(mask).unsqueeze(0), torch.from_numpy(
                 lacken_mask).unsqueeze(0)
 

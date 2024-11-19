@@ -252,6 +252,28 @@ def display_batch(images, masks, pred, lacken_masks):
     print(f"IoU Lackens: {iou(pred.to(device), lacken_masks.to(device))}")
     print(f"Accuracy: {balanced_accuracy(pred.to(device), masks.to(device))}")
     print(f"Accuracy Lackens: {balanced_accuracy(pred.to(device), lacken_masks.to(device))}")
+
+    pred_binary = (pred > 0.5).float()
+
+    correct_pixels = (pred_binary == masks).sum().item()
+    total_pixels = masks.numel()
+
+    lacken_pixels = (lacken_masks == 1).sum().item()
+
+    correct_lacken_pixels = ((pred_binary == 1) & (lacken_masks == 1)).sum().item()  #
+
+    lake_pixels = (masks == 1).sum().item() - lacken_pixels
+
+    correct_lake_pixels = ((pred_binary == 1) & (masks == 1)).sum().item()  #
+
+
+    # print(f"Total Pixels in Lacken Mask: {lacken_pixels}")
+    print(f"Correctly Identified Pixels: {correct_pixels}/{total_pixels} ({correct_pixels / total_pixels:.2%})")
+    print(
+        f"Correctly Identified Lake Pixels: {correct_lake_pixels}/{lake_pixels} ({correct_lake_pixels / lake_pixels:.2%})")
+    print(
+        f"Correctly Identified Lacken Pixels: {correct_lacken_pixels}/{lacken_pixels} ({correct_lacken_pixels / lacken_pixels:.2%})")
+
     images = images.permute(0, 2, 3, 1)
     masks = masks.permute(0, 2, 3, 1)
     pred = pred.permute(0, 2, 3, 1)
@@ -314,3 +336,5 @@ def display_batch_all(images, masks, pred, pred2, pred3, pred4, lacken_masks, i)
     ax[5].set_title('Predictions Model IV' )
     plt.savefig('./inf' + '.png')
     plt.show()
+
+
