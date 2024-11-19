@@ -29,6 +29,7 @@ import fiona
 from fiona.transform import transform_geom
 import scipy.ndimage as ndi
 
+
 # to merge the files
 def merge_files(df, type='VV'):
     output_directory = './merged_tiffs'
@@ -107,6 +108,7 @@ def mask_files(shape, input_dir, output_dir):
             with rasterio.open(output_filepath, "w", **out_meta) as dest:
                 dest.write(out_image)
 
+
 def create_lacken_mask(input_dir, output_dir):
     tif_files = os.listdir(input_dir)
     if not os.path.exists(output_dir):
@@ -157,7 +159,8 @@ class ImageDataset(Dataset):
 
     def __getitem__(self, idx):
 
-        if self.images[idx].endswith(('.tif', '.tiff')) and self.masks[idx].endswith(('.tif', '.tiff')) and self.lacken_masks[idx].endswith(('.tif', '.tiff')):
+        if self.images[idx].endswith(('.tif', '.tiff')) and self.masks[idx].endswith(('.tif', '.tiff')) and \
+                self.lacken_masks[idx].endswith(('.tif', '.tiff')):
             image_path = os.path.join(self.images_folder, self.images[idx])
             mask_path = os.path.join(self.mask_folder, self.masks[idx])
             lacken_mask_path = os.path.join(self.lacken_mask_folder, self.lacken_masks[idx])
@@ -281,21 +284,10 @@ def augment_images_and_masks(images_folder, mask_folder, lacken_mask_folder, sav
                     mask = Image.open(mask_path)
                     lacken_mask = Image.open(lacken_mask_path)
 
-                    # if X_flip[x] == 1:
-                    #     image = ImageOps.mirror(image)
-                    #     mask = ImageOps.mirror(mask)
-                    #     lacken_mask = ImageOps.mirror(lacken_mask)
-                    # if Y_flip[y] == 1:
-                    #     image = ImageOps.flip(image)
-                    #     mask = ImageOps.flip(mask)
-                    #     lacken_mask = ImageOps.flip(lacken_mask)
-
-                    # Convert to numpy array
                     image = np.array(image, dtype=np.float32)
                     mask = np.array(mask, dtype=np.float32)
                     lacken_mask = np.array(lacken_mask, dtype=np.float32)
 
-                    # If single-channel, expand dimensions
                     if len(image.shape) == 2:
                         image = np.expand_dims(image, axis=2)
                     if len(mask.shape) == 2:
@@ -303,7 +295,6 @@ def augment_images_and_masks(images_folder, mask_folder, lacken_mask_folder, sav
                     if len(lacken_mask.shape) == 2:
                         lacken_mask = np.expand_dims(lacken_mask, axis=2)
 
-                    # Apply transformation
                     image = np.moveaxis(image, 2, 0)
                     mask = np.moveaxis(mask, 2, 0)
                     lacken_mask = np.moveaxis(lacken_mask, 2, 0)
@@ -312,16 +303,13 @@ def augment_images_and_masks(images_folder, mask_folder, lacken_mask_folder, sav
                     mask_transformed = transform(mask, rotation_deg=rotation_deg[r])
                     lacken_mask_transformed = transform(lacken_mask, rotation_deg=rotation_deg[r])
 
-                    # Move back to (h, w, channel)
                     image_transformed = np.moveaxis(image_transformed, 0, 2)
                     mask_transformed = np.moveaxis(mask_transformed, 0, 2)
                     lacken_mask_transformed = np.moveaxis(lacken_mask_transformed, 0, 2)
 
-                    # Prepare file names
                     out_file = f'_rotate_{rotation_deg[r]:+02d}-xflip_{X_flip[x]}-yflip_{Y_flip[y]}'
                     img_name = os.path.basename(image_files[i]).split('.')[0] + out_file + '.tif'
 
-                    # Save transformed images and masks
                     image_save_path = os.path.join(save_folder, images_folder, img_name)
                     mask_save_path = os.path.join(save_folder, mask_folder, img_name)
                     lacken_mask_save_path = os.path.join(save_folder, lacken_mask_folder, img_name)
